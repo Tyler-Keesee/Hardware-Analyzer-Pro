@@ -1,6 +1,6 @@
 # Hardware Analyzer Pro
 
-A professional-grade hardware monitoring and analysis tool built with Python and PyQt6.
+A Python and PyQt6 desktop hardware-monitoring project with system metrics, performance graphs, and export utilities. Features and platform support should be verified against your hardware and the included tests.
 
 ## Key Features
 
@@ -16,6 +16,13 @@ A professional-grade hardware monitoring and analysis tool built with Python and
 - Export capabilities (JSON, CSV, PDF)
 - Auto-refresh functionality
 - System alerts and notifications
+
+## Testing and support status
+
+The repository contains tests under `tests/`, but desktop rendering, sensors, and
+NVIDIA-specific metrics depend on the operating system, permissions, and installed drivers.
+Do not assume all monitors or export formats work on every machine without testing.
+There is currently no confirmed multi-platform CI matrix.
 
 ## Installation
 
@@ -33,14 +40,17 @@ powershell.exe -ExecutionPolicy Bypass -File .\dev_setup.ps1
 # Windows (Command Prompt)
 .\launch.bat
 
-# Linux/macOS
-./dev_setup.sh
+# Linux/macOS (experimental; not CI-verified)
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python run.py
 ```
 
 ## Requirements
 
 - Python 3.8 or higher
-- Windows, Linux, or macOS
+- Windows is the primary target; Linux/macOS behavior depends on available drivers and desktop support and has not been independently validated
 - Dependencies (automatically installed):
   - PyQt6 ≥ 6.4.0
   - matplotlib ≥ 3.6.0
