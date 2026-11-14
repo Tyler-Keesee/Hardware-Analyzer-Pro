@@ -88,7 +88,7 @@ Log files are stored in the `logs` directory:
 
 ## License
 
-MIT License - See LICENSE file for details
+The `LICENSE` file is currently empty and does not provide a usable license grant. Add a complete license text before describing the project as MIT-licensed.
 
 ## Support
 
