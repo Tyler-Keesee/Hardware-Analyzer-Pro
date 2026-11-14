@@ -10,7 +10,6 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List
 import platform
-import wmi
 import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
@@ -55,6 +54,7 @@ class HardwareManager:
             cpu = CPU()
             if platform.system() == "Windows":
                 try:
+                    import wmi  # Windows-only optional dependency
                     w = wmi.WMI()
                     cpu_info = w.Win32_Processor()[0]
                     cpu.name = cpu_info.Name.strip()
