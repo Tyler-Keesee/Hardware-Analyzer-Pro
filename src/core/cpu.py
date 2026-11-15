@@ -1,5 +1,6 @@
 import psutil
 import platform
+import sys
 import subprocess
 import json
 import logging
@@ -131,10 +132,10 @@ class CPU:
     def get_cpu_temperature(self) -> Union[float, str]:
         """Get CPU temperature if available."""
         try:
-            if platform.system() == "Linux":
+            if sys.platform == "linux":
                 temp = psutil.sensors_temperatures().get("coretemp", [])
                 if temp:
-                    return temp[0].current
+                    return float(temp[0].current)
             return "Not available"
         except Exception:
             return "Not available"

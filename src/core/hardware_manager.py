@@ -235,16 +235,23 @@ class HardwareManager:
         """Get aggregated storage status across all drives."""
         critical_drives = []
         warning_drives = []
+        accessible_drives = 0
 
         for drive in drives:
             if "error" in drive:
                 continue
+            accessible_drives += 1
             usage = float(drive["percent_used"].strip("%"))
             if usage > 90:
                 critical_drives.append(drive["device"])
             elif usage > 80:
                 warning_drives.append(drive["device"])
 
+        if not accessible_drives:
+            return {
+                "message": "Storage Unavailable",
+                "details": "No accessible drive measurements were reported",
+            }
         if critical_drives:
             return {
                 "message": "🔴 Critical Storage Space",
@@ -669,11 +676,42 @@ class HardwareManager:
                 Paragraph,
                 Image,
             )
-            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            from pathlib import Path
+            import reportlab
 
-            doc = SimpleDocTemplate(str(file_path), pagesize=letter)
+            doc = SimpleDocTemplate(
+                str(file_path),
+                pagesize=letter,
+                title="Hardware Analyzer Pro Report",
+                author="Hardware Analyzer Pro",
+            )
             styles = getSampleStyleSheet()
+            fonts_dir = Path(reportlab.__file__).parent / "fonts"
+            pdfmetrics.registerFont(TTFont("AnalyzerSans", str(fonts_dir / "Vera.ttf")))
+            pdfmetrics.registerFont(TTFont("AnalyzerBold", str(fonts_dir / "VeraBd.ttf")))
+            for style in styles.byName.values():
+                style.fontName = "AnalyzerSans"
+            styles["Title"].fontName = "AnalyzerBold"
+            styles["Heading1"].fontName = "AnalyzerBold"
+            value_style = ParagraphStyle(
+                "ReportValue",
+                parent=styles["BodyText"],
+                fontSize=9,
+                leading=12,
+                wordWrap="CJK",
+            )
             elements = []
+
+            def report_text(value):
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, ensure_ascii=False)
+                text = str(value)
+                for icon in ("🟢", "🟡", "🔴"):
+                    text = text.replace(icon, "")
+                return Paragraph(escape(text.strip()), value_style)
 
             # Add title
             elements.append(Paragraph("System Performance Report", styles["Title"]))
@@ -683,17 +721,26 @@ class HardwareManager:
 
             # Create tables for each section
             for section, data in summary.items():
-                elements.append(Paragraph(section.upper(), styles["Heading1"]))
+                elements.append(Paragraph(section.replace("_", " ").upper(), styles["Heading1"]))
                 if isinstance(data, dict):
-                    table_data = [[k, str(v)] for k, v in data.items()]
-                    t = Table(table_data)
+                    table_data = []
+                    for key, value in data.items():
+                        values = value if isinstance(value, list) and value else [value]
+                        for index, item in enumerate(values):
+                            label = f"{key} {index + 1}" if len(values) > 1 else key
+                            table_data.append([report_text(label), report_text(item)])
+                    if not table_data:
+                        elements.append(report_text("No data available"))
+                        continue
+                    t = Table(table_data, colWidths=[125, doc.width - 125], hAlign="LEFT")
                     t.setStyle(
                         TableStyle(
                             [
                                 ("BACKGROUND", (0, 0), (-1, -1), colors.white),
                                 ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
                                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                ("FONTNAME", (0, 0), (-1, -1), "AnalyzerSans"),
                                 ("FONTSIZE", (0, 0), (-1, -1), 10),
                                 ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
                                 ("GRID", (0, 0), (-1, -1), 1, colors.black),
@@ -701,6 +748,8 @@ class HardwareManager:
                         )
                     )
                     elements.append(t)
+                else:
+                    elements.append(report_text(data))
 
             # Generate and add performance graphs
             graph_data = self.generate_performance_graphs()

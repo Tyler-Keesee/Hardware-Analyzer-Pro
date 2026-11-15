@@ -1,4 +1,5 @@
 import os
+import shutil
 import json
 import logging
 import csv
@@ -111,14 +112,12 @@ def load_from_json(file_path):
 def check_disk_space(path="."):
     """Check the available disk space for a given path."""
     try:
-        statvfs = os.statvfs(path)
-        total = statvfs.f_blocks * statvfs.f_frsize
-        available = statvfs.f_bavail * statvfs.f_frsize
+        usage = shutil.disk_usage(path)
         logging.info(f"Disk space check complete for path: {path}")
         return {
-            "total_space": total,
-            "available_space": available,
-            "used_space": total - available,
+            "total_space": usage.total,
+            "available_space": usage.free,
+            "used_space": usage.used,
         }
     except Exception as e:
         logging.error(f"Error checking disk space for path {path}: {e}")

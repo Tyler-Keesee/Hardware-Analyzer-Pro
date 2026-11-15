@@ -31,6 +31,8 @@ jobs:
       - name: Linux setup
         if: runner.os != 'Windows'
         run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libdbus-1-3
           python -m venv venv
           venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
       - name: Lint, type checks, tests, desktop rendering, and installed entry point

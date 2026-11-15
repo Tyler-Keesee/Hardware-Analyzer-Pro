@@ -44,3 +44,24 @@ def test_unsupported_export_reports_failure(hardware_manager, tmp_path):
     destination = tmp_path / "report.unsupported"
     assert not hardware_manager.export_performance_report(destination, "unsupported")
     assert not destination.exists()
+
+
+def test_pdf_wraps_device_data_and_includes_scalar_timestamp(
+    hardware_manager, monkeypatch, tmp_path
+):
+    from pypdf import PdfReader
+
+    timestamp = "2026-11-15 14:00:00"
+    summary = {
+        "gpu": {"gpus": [{"name": "Device with a long model name " * 20, "memory": "12 GB"}]},
+        "timestamp": timestamp,
+        "performance_status": {"cpu_status": "🟢 CPU Optimal"},
+    }
+    monkeypatch.setattr(hardware_manager, "get_hardware_summary", lambda: summary)
+    destination = tmp_path / "wrapped.pdf"
+    assert hardware_manager.export_performance_report(destination, "pdf")
+    text = "\n".join(page.extract_text() for page in PdfReader(destination).pages)
+    assert timestamp in text
+    assert "CPU Optimal" in text
+    assert "Device with a long model name" in text
+    assert "\u25a0" not in text

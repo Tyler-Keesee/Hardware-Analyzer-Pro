@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
     QStatusBar,
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtGui import QIcon, QFont, QFontDatabase
 from .core.hardware_manager import HardwareManager
 from .core.network import Network
 from .core.utils import setup_logging
@@ -71,6 +71,8 @@ class HardwareAnalyzerApp(QMainWindow):
         self.setWindowTitle("Hardware Analyzer Pro")
         self.setGeometry(100, 100, 1024, 768)
         self.setWindowIcon(QIcon("favicon.ico"))
+        self.hardware_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        self.hardware_font.setPointSize(10)
 
         # Add theme manager instance
         self.theme_manager = ThemeManager()
@@ -812,7 +814,7 @@ class HardwareAnalyzerApp(QMainWindow):
             try:
                 # Refresh hardware info first
                 formatted_output = self.hardware_manager.get_formatted_summary()
-                self.hardware_text.setFont(QFont("Cascadia Code", 10))
+                self.hardware_text.setFont(self.hardware_font)
                 self.hardware_text.setText(formatted_output)
 
                 # Get current metrics
@@ -857,7 +859,7 @@ class HardwareAnalyzerApp(QMainWindow):
         try:
             # Use the new pre-formatted summary method
             formatted_output = self.hardware_manager.get_formatted_summary()
-            self.hardware_text.setFont(QFont("Cascadia Code", 10))  # Better monospace font
+            self.hardware_text.setFont(self.hardware_font)
             self.hardware_text.setText(formatted_output)
 
             # Update status bar with CPU and RAM usage

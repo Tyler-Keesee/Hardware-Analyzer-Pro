@@ -62,6 +62,8 @@ python3 -m venv .venv
 .venv/bin/python run.py
 ```
 
+Minimal Debian/Ubuntu environments also need Qt system libraries such as `libegl1`, `libgl1`, `libxkbcommon0`, and `libdbus-1-3`. These cannot be installed with pip; the Linux CI job installs them before desktop tests.
+
 ## Verification and limitations
 
 The GitHub Actions workflow covers Windows and Linux with Python 3.10 and 3.14. It runs lint, type checks, hardware-manager tests, report-export tests, and a desktop smoke test that opens the real four-tab window, refreshes hardware information, renders each tab, and closes it. Windows jobs additionally exercise setup and launcher behavior, including failure exit codes and paths containing spaces. Check the workflow results for the commit you use; a configured matrix alone is not proof of a passing run.
