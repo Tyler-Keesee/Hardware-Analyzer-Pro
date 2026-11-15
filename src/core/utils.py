@@ -1,5 +1,5 @@
 import os
-import sys
+import shutil
 import json
 import logging
 import csv
@@ -12,9 +12,7 @@ def setup_logging():
     os.makedirs("logs", exist_ok=True)
 
     # Configure logging with UTF-8 encoding
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     # File handler with UTF-8 encoding
     file_handler = logging.FileHandler("logs/hardware_analyzer.log", encoding="utf-8")
@@ -89,7 +87,7 @@ def generate_timestamped_filename(base_name, extension):
 def validate_writable_path(file_path):
     """Validate if the file path is writable."""
     try:
-        with open(file_path, "w") as file:
+        with open(file_path, "a"):
             pass
         logging.info(f"Path is writable: {file_path}")
     except Exception as e:
@@ -114,14 +112,12 @@ def load_from_json(file_path):
 def check_disk_space(path="."):
     """Check the available disk space for a given path."""
     try:
-        statvfs = os.statvfs(path)
-        total = statvfs.f_blocks * statvfs.f_frsize
-        available = statvfs.f_bavail * statvfs.f_frsize
+        usage = shutil.disk_usage(path)
         logging.info(f"Disk space check complete for path: {path}")
         return {
-            "total_space": total,
-            "available_space": available,
-            "used_space": total - available,
+            "total_space": usage.total,
+            "available_space": usage.free,
+            "used_space": usage.used,
         }
     except Exception as e:
         logging.error(f"Error checking disk space for path {path}: {e}")

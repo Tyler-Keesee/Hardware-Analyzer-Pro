@@ -1,9 +1,7 @@
 import platform
-import subprocess
 import json
 import wmi  # Install using `pip install WMI`
 import psutil
-import win32com.client
 
 
 class PlatformWindows:

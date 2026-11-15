@@ -1,8 +1,8 @@
-from core.cpu import CPU
-from core.ram import RAM
-from core.storage import Storage
-from core.gpu import GPU
-from core.logging_util import get_logger  # Add this import
+from .cpu import CPU
+from .ram import RAM
+from .storage import Storage
+from .gpu import GPU
+from .logging_util import get_logger
 import json
 import requests
 import csv
@@ -13,6 +13,7 @@ import platform
 import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
+from html import escape
 
 # Configure logging
 logging.basicConfig(
@@ -55,6 +56,7 @@ class HardwareManager:
             if platform.system() == "Windows":
                 try:
                     import wmi  # Windows-only optional dependency
+
                     w = wmi.WMI()
                     cpu_info = w.Win32_Processor()[0]
                     cpu.name = cpu_info.Name.strip()
@@ -86,7 +88,13 @@ class HardwareManager:
 
     def refresh_all(self):
         """Refresh all hardware components with enhanced error handling."""
-        results = {"success": False, "cpu": 0.0, "ram": 0.0, "gpu": 0.0, "errors": []}
+        results: Dict[str, Any] = {
+            "success": False,
+            "cpu": 0.0,
+            "ram": 0.0,
+            "gpu": 0.0,
+            "errors": [],
+        }
 
         try:
             self.cpu.update_metrics()
@@ -161,7 +169,7 @@ class HardwareManager:
             storage_metrics = self.storage.to_dict()
 
             # CPU Status
-            cpu_usage = float(cpu_metrics["current_usage"].strip("%"))
+            cpu_usage = float(str(cpu_metrics["current_usage"]).strip("%"))
             cpu_status = self._get_resource_status(
                 cpu_usage,
                 warning_threshold=70,
@@ -179,9 +187,7 @@ class HardwareManager:
             )
 
             # Storage Status
-            storage_status = self._get_aggregate_storage_status(
-                storage_metrics["drives"]
-            )
+            storage_status = self._get_aggregate_storage_status(storage_metrics["drives"])
 
             return {
                 "cpu_status": cpu_status["message"],
@@ -215,7 +221,9 @@ class HardwareManager:
         elif usage >= warning_threshold:
             return {
                 "message": f"🟡 High {resource_name} Load",
-                "details": f"{resource_name} usage at {usage:.1f}% - Monitor for performance impact",
+                "details": (
+                    f"{resource_name} usage at {usage:.1f}% - Monitor for performance impact"
+                ),
             }
         else:
             return {
@@ -227,14 +235,23 @@ class HardwareManager:
         """Get aggregated storage status across all drives."""
         critical_drives = []
         warning_drives = []
+        accessible_drives = 0
 
         for drive in drives:
+            if "error" in drive:
+                continue
+            accessible_drives += 1
             usage = float(drive["percent_used"].strip("%"))
             if usage > 90:
                 critical_drives.append(drive["device"])
             elif usage > 80:
                 warning_drives.append(drive["device"])
 
+        if not accessible_drives:
+            return {
+                "message": "Storage Unavailable",
+                "details": "No accessible drive measurements were reported",
+            }
         if critical_drives:
             return {
                 "message": "🔴 Critical Storage Space",
@@ -257,9 +274,7 @@ class HardwareManager:
     def export_to_web(self, api_url: str, timeout: int = 10) -> None:
         """Export hardware summary to web API with enhanced error handling."""
         try:
-            response = requests.post(
-                api_url, json=self.get_hardware_summary(), timeout=timeout
-            )
+            response = requests.post(api_url, json=self.get_hardware_summary(), timeout=timeout)
             response.raise_for_status()
             logging.info("✓ Hardware summary exported to web successfully")
         except requests.exceptions.RequestException as e:
@@ -313,7 +328,7 @@ class HardwareManager:
     def get_cpu_usage(self):
         """Get current CPU usage with error handling."""
         try:
-            return float(self.cpu.get_detailed_metrics()["current_usage"].strip("%"))
+            return float(str(self.cpu.get_detailed_metrics()["current_usage"]).strip("%"))
         except Exception:
             return 0.0
 
@@ -381,21 +396,13 @@ class HardwareManager:
             }
 
             # Format each section with caching for performance
-            sections.extend(
-                self._format_system_section(summary["system_info"], headers["SYSTEM"])
-            )
+            sections.extend(self._format_system_section(summary["system_info"], headers["SYSTEM"]))
             sections.extend(self._format_cpu_section(summary["cpu"], headers["CPU"]))
-            sections.extend(
-                self._format_memory_section(summary["ram"], headers["MEMORY"])
-            )
+            sections.extend(self._format_memory_section(summary["ram"], headers["MEMORY"]))
             sections.extend(self._format_gpu_section(summary["gpu"], headers["GPU"]))
+            sections.extend(self._format_storage_section(summary["storage"], headers["STORAGE"]))
             sections.extend(
-                self._format_storage_section(summary["storage"], headers["STORAGE"])
-            )
-            sections.extend(
-                self._format_status_section(
-                    summary["performance_status"], headers["STATUS"]
-                )
+                self._format_status_section(summary["performance_status"], headers["STATUS"])
             )
 
             # Add timestamp with icon
@@ -430,9 +437,7 @@ class HardwareManager:
 
             # Strip '%' and convert to float, with error handling
             try:
-                usage_value = float(
-                    usage.strip("%") if isinstance(usage, str) else usage
-                )
+                usage_value = float(usage.strip("%") if isinstance(usage, str) else usage)
             except (ValueError, AttributeError):
                 usage_value = 0.0
 
@@ -440,13 +445,11 @@ class HardwareManager:
             sections.append(f"║  Model      : {str(model):<35} ║")
             sections.append(f"║  Cores      : {cores} Physical, {threads} Logical ║")
             sections.append(f"║  Frequency  : {str(freq):<35} ║")
-            sections.append(
-                f"║  Usage      : {self._get_status_indicator(usage_value):<35} ║"
-            )
+            sections.append(f"║  Usage      : {self._get_status_indicator(usage_value):<35} ║")
 
         except Exception as e:
             self.logger.error(f"Error formatting CPU section: {e}")
-            sections.append(f"║  Error: Could not retrieve CPU information        ║")
+            sections.append("║  Error: Could not retrieve CPU information        ║")
 
         sections.append("╚══════════════════════════════════════════════════╝")
         return sections
@@ -458,13 +461,9 @@ class HardwareManager:
         total = float(ram_info["total"].split()[0])
         used = float(ram_info["used"].split()[0])
         percent = float(ram_info["percent_used"].strip("%"))
-        sections.append(
-            f"║  Total      : {total:>6.2f} GB {self._get_memory_bar(percent)} ║"
-        )
+        sections.append(f"║  Total      : {total:>6.2f} GB {self._get_memory_bar(percent)} ║")
         sections.append(f"║  Used       : {used:>6.2f} GB ({percent}%) ║")
-        sections.append(
-            f"║  Available  : {float(ram_info['available'].split()[0]):>6.2f} GB ║"
-        )
+        sections.append(f"║  Available  : {float(ram_info['available'].split()[0]):>6.2f} GB ║")
         sections.append("╚══════════════════════════════════════════════════╝")
         return sections
 
@@ -478,7 +477,7 @@ class HardwareManager:
             if memory != "Memory size unknown" and not isinstance(memory, str):
                 memory = f"{memory / (1024**3):.2f} GB"
             sections.append(f"║  Memory     : {memory:<35} ║")
-            sections.append(f"║  Driver     : {gpu['driver_version']:<35} ║")
+            sections.append(f"║  Driver     : {gpu.get('driver_version', 'Unknown'):<35} ║")
         sections.append("╚══════════════════════════════════════════════════╝")
         return sections
 
@@ -487,12 +486,16 @@ class HardwareManager:
         sections = []
         sections.append("\n╔════════════════ " + header + " ════════════════╗")
         for drive in storage_info["drives"]:
+            if "error" in drive:
+                sections.append(f"║  {drive['device']}: {drive['error']}")
+                continue
             percent = float(drive["percent_used"].strip("%"))
             label = f"{drive['device']} ({drive['type']})"
             sections.append(f"║  {label:<44} ║")
             sections.append(f"║  {self._get_storage_bar(percent)} [{percent:>5.1f}%] ║")
             sections.append(
-                f"║  Total: {drive['total']:<10} Used: {drive['used']:<10} Free: {drive['free']:<10} ║"
+                f"║  Total: {drive['total']:<10} Used: {drive['used']:<10} "
+                f"Free: {drive['free']:<10} ║"
             )
             sections.append("║──────────────────────────────────────────────────║")
         sections.append("╚══════════════════════════════════════════════════╝")
@@ -514,6 +517,15 @@ class HardwareManager:
         filled = int(width * percent / 100)
         bar = "█" * filled + "░" * (width - filled)
         return f"[{bar}]"
+
+    def _get_status_indicator(self, usage: float) -> str:
+        """Format a measured utilization percentage for the hardware view."""
+        indicator = "🟢" if usage < 70 else "🟡" if usage < 85 else "🔴"
+        return f"{indicator} {usage:.1f}%"
+
+    def get_device_status(self) -> Dict[str, Any]:
+        """Expose current device information to the existing web endpoint."""
+        return self.get_hardware_summary()
 
     def _get_storage_bar(self, percent: float) -> str:
         """Generate storage usage bar."""
@@ -537,17 +549,14 @@ class HardwareManager:
             sections.append("\n╔════════════════ CPU INFORMATION ════════════════╗")
             sections.append(f"║  Model      : {cpu_info.get('name', 'Unknown'):<35} ║")
             sections.append(
-                f"║  Cores      : {cpu_info.get('cores', '?')} Physical, {cpu_info.get('threads', '?')} Logical ║"
+                f"║  Cores      : {cpu_info.get('cores', '?')} Physical, "
+                f"{cpu_info.get('threads', '?')} Logical ║"
             )
-            sections.append(
-                f"║  Frequency  : {cpu_info.get('frequency', 'Unknown'):<35} ║"
-            )
+            sections.append(f"║  Frequency  : {cpu_info.get('frequency', 'Unknown'):<35} ║")
             usage = cpu_info.get("current_usage", "0%")
             if isinstance(usage, str):
                 usage = float(usage.strip("%"))
-            sections.append(
-                f"║  Usage      : {self._get_status_indicator(usage):<35} ║"
-            )
+            sections.append(f"║  Usage      : {self._get_status_indicator(usage):<35} ║")
             sections.append("╚══════════════════════════════════════════════════╝")
 
             # ...rest of existing code...
@@ -624,6 +633,8 @@ class HardwareManager:
                 self._export_html_report(file_path)
             elif format == "csv":
                 self._export_csv_report(file_path)
+            else:
+                raise ValueError(f"Unsupported report format: {format}")
 
             self.logger.info(f"Performance report exported to {file_path}")
             return True
@@ -631,6 +642,27 @@ class HardwareManager:
         except Exception as e:
             self.logger.error(f"Error exporting performance report: {e}")
             return False
+
+    def _export_csv_report(self, file_path):
+        """Write all summary sections without dropping nested GPU or drive data."""
+        with open(file_path, "w", newline="", encoding="utf-8") as report:
+            writer = csv.writer(report)
+            writer.writerow(["Section", "Field", "Value"])
+            for section, data in self.get_hardware_summary().items():
+                fields = data.items() if isinstance(data, dict) else [("value", data)]
+                for field, value in fields:
+                    if isinstance(value, (dict, list)):
+                        value = json.dumps(value, ensure_ascii=False)
+                    writer.writerow([section, field, value])
+
+    def _export_html_report(self, file_path):
+        """Export local, self-contained HTML with escaped hardware strings."""
+        payload = escape(json.dumps(self.get_hardware_summary(), indent=2, ensure_ascii=False))
+        with open(file_path, "w", encoding="utf-8") as report:
+            report.write(
+                '<!doctype html><meta charset="utf-8"><title>Hardware Report</title>'
+                "<h1>Hardware Analyzer Pro</h1><pre>" + payload + "</pre>"
+            )
 
     def _export_pdf_report(self, file_path):
         """Export report as PDF."""
@@ -642,12 +674,44 @@ class HardwareManager:
                 Table,
                 TableStyle,
                 Paragraph,
+                Image,
             )
-            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            from pathlib import Path
+            import reportlab
 
-            doc = SimpleDocTemplate(file_path, pagesize=letter)
+            doc = SimpleDocTemplate(
+                str(file_path),
+                pagesize=letter,
+                title="Hardware Analyzer Pro Report",
+                author="Hardware Analyzer Pro",
+            )
             styles = getSampleStyleSheet()
+            fonts_dir = Path(reportlab.__file__).parent / "fonts"
+            pdfmetrics.registerFont(TTFont("AnalyzerSans", str(fonts_dir / "Vera.ttf")))
+            pdfmetrics.registerFont(TTFont("AnalyzerBold", str(fonts_dir / "VeraBd.ttf")))
+            for style in styles.byName.values():
+                style.fontName = "AnalyzerSans"
+            styles["Title"].fontName = "AnalyzerBold"
+            styles["Heading1"].fontName = "AnalyzerBold"
+            value_style = ParagraphStyle(
+                "ReportValue",
+                parent=styles["BodyText"],
+                fontSize=9,
+                leading=12,
+                wordWrap="CJK",
+            )
             elements = []
+
+            def report_text(value):
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, ensure_ascii=False)
+                text = str(value)
+                for icon in ("🟢", "🟡", "🔴"):
+                    text = text.replace(icon, "")
+                return Paragraph(escape(text.strip()), value_style)
 
             # Add title
             elements.append(Paragraph("System Performance Report", styles["Title"]))
@@ -657,17 +721,26 @@ class HardwareManager:
 
             # Create tables for each section
             for section, data in summary.items():
-                elements.append(Paragraph(section.upper(), styles["Heading1"]))
+                elements.append(Paragraph(section.replace("_", " ").upper(), styles["Heading1"]))
                 if isinstance(data, dict):
-                    table_data = [[k, str(v)] for k, v in data.items()]
-                    t = Table(table_data)
+                    table_data = []
+                    for key, value in data.items():
+                        values = value if isinstance(value, list) and value else [value]
+                        for index, item in enumerate(values):
+                            label = f"{key} {index + 1}" if len(values) > 1 else key
+                            table_data.append([report_text(label), report_text(item)])
+                    if not table_data:
+                        elements.append(report_text("No data available"))
+                        continue
+                    t = Table(table_data, colWidths=[125, doc.width - 125], hAlign="LEFT")
                     t.setStyle(
                         TableStyle(
                             [
                                 ("BACKGROUND", (0, 0), (-1, -1), colors.white),
                                 ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
                                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                ("FONTNAME", (0, 0), (-1, -1), "AnalyzerSans"),
                                 ("FONTSIZE", (0, 0), (-1, -1), 10),
                                 ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
                                 ("GRID", (0, 0), (-1, -1), 1, colors.black),
@@ -675,18 +748,16 @@ class HardwareManager:
                         )
                     )
                     elements.append(t)
+                else:
+                    elements.append(report_text(data))
 
             # Generate and add performance graphs
             graph_data = self.generate_performance_graphs()
             if graph_data:
                 # Add performance graphs to PDF
                 img_data = base64.b64decode(graph_data)
-                img_path = "temp_graph.png"
-                with open(img_path, "wb") as f:
-                    f.write(img_data)
                 elements.append(Paragraph("Performance Graphs", styles["Heading1"]))
-                elements.append(Image(img_path))
-                os.remove(img_path)
+                elements.append(Image(BytesIO(img_data), width=450, height=360))
 
             doc.build(elements)
 

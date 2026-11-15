@@ -17,8 +17,9 @@ class Network:
     def __init__(self, log_dir: str = "logs"):
         """Initialize Network monitoring with enhanced features."""
         self.log_dir = log_dir
-        self.history = []
+        self.history: List[Dict[str, Any]] = []
         self.max_history_size = 100
+        self.errors: Dict[str, str] = {}
 
         # Create log directory
         os.makedirs(log_dir, exist_ok=True)
@@ -44,17 +45,23 @@ class Network:
         self.logger.addHandler(file_handler)
 
     def update_metrics(self):
-        """Update network metrics."""
+        """Keep monitoring available when the OS restricts an individual counter."""
+        self.errors = {}
         try:
             self.interfaces = self._get_network_interfaces()
+        except (psutil.Error, OSError) as exc:
+            self.interfaces = []
+            self.errors["interfaces"] = str(exc)
+            self.logger.warning("Network interfaces unavailable: %s", exc)
+        try:
             self.connections = self._get_network_connections()
-            self.io_counters = self._get_io_counters()
-            self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self._update_history()
-            self.logger.info("Network metrics updated successfully")
-        except Exception as e:
-            self.logger.error(f"Error updating network metrics: {e}")
-            raise
+        except (psutil.Error, OSError) as exc:
+            self.connections = []
+            self.errors["connections"] = str(exc)
+            self.logger.warning("Network connections unavailable: %s", exc)
+        self.io_counters = self._get_io_counters()
+        self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._update_history()
 
     def _get_network_interfaces(self) -> List[Dict[str, Any]]:
         """Get detailed network interface information."""
@@ -65,7 +72,7 @@ class Network:
         net_if_stats = psutil.net_if_stats()
 
         for interface_name, addresses in net_if_addrs.items():
-            interface_info = {
+            interface_info: Dict[str, Any] = {
                 "name": interface_name,
                 "addresses": [],
                 "status": "Down",
@@ -79,9 +86,7 @@ class Network:
                 interface_info.update(
                     {
                         "status": "Up" if stats.isup else "Down",
-                        "speed": (
-                            f"{stats.speed} Mbps" if stats.speed > 0 else "Unknown"
-                        ),
+                        "speed": (f"{stats.speed} Mbps" if stats.speed > 0 else "Unknown"),
                         "mtu": stats.mtu,
                     }
                 )
@@ -108,9 +113,7 @@ class Network:
             for conn in psutil.net_connections(kind="inet"):
                 connection_info = {
                     "type": "TCP" if conn.type == socket.SOCK_STREAM else "UDP",
-                    "local_address": (
-                        f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else None
-                    ),
+                    "local_address": (f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else None),
                     "remote_address": (
                         f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else None
                     ),
@@ -154,45 +157,11 @@ class Network:
         try:
             self.update_metrics()
 
-            stats = psutil.net_io_counters()
-            net_if_stats = psutil.net_if_stats()
-            net_if_addrs = psutil.net_if_addrs()
-
-            interfaces = []
-            for name, addrs in net_if_addrs.items():
-                interface = {
-                    "name": name,
-                    "status": "Up" if net_if_stats[name].isup else "Down",
-                    "speed": (
-                        f"{net_if_stats[name].speed} Mbps"
-                        if net_if_stats[name].speed > 0
-                        else "Unknown"
-                    ),
-                    "mtu": net_if_stats[name].mtu,
-                    "addresses": [],
-                }
-
-                for addr in addrs:
-                    addr_info = {
-                        "family": str(addr.family),
-                        "address": addr.address,
-                        "netmask": getattr(addr, "netmask", None),
-                        "broadcast": getattr(addr, "broadcast", None),
-                    }
-                    interface["addresses"].append(addr_info)
-
-                interfaces.append(interface)
-
             return {
-                "interfaces": interfaces,
-                "io_stats": {
-                    "bytes_sent": stats.bytes_sent,
-                    "bytes_recv": stats.bytes_recv,
-                    "packets_sent": stats.packets_sent,
-                    "packets_recv": stats.packets_recv,
-                    "errin": stats.errin,
-                    "errout": stats.errout,
-                },
+                "interfaces": self.interfaces,
+                "connections": self.connections,
+                "io_stats": self.io_counters,
+                "errors": self.errors.copy(),
                 "connectivity": self.test_internet_connection(),
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
@@ -208,7 +177,7 @@ class Network:
         addrs = psutil.net_if_addrs()
 
         for name, stat in stats.items():
-            interface = {
+            interface: Dict[str, Any] = {
                 "name": name,
                 "status": "Up" if stat.isup else "Down",
                 "speed": f"{stat.speed} Mbps" if stat.speed > 0 else "Unknown",
@@ -237,22 +206,18 @@ class Network:
             for conn in psutil.net_connections(kind="inet"):
                 connection = {
                     "type": "TCP" if conn.type == socket.SOCK_STREAM else "UDP",
-                    "local_addr": (
-                        f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else None
-                    ),
-                    "remote_addr": (
-                        f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else None
-                    ),
+                    "local_addr": (f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else None),
+                    "remote_addr": (f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else None),
                     "status": conn.status,
                 }
                 connections.append(connection)
-        except:
+        except Exception:
             pass
         return connections
 
     def test_internet_connection(self) -> Dict[str, Any]:
         """Test internet connectivity with better error handling."""
-        result = {
+        result: Dict[str, Any] = {
             "connected": False,
             "latency": None,
             "external_ip": None,
@@ -261,7 +226,8 @@ class Network:
 
         try:
             # Test basic connectivity (with timeout)
-            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            with socket.create_connection(("8.8.8.8", 53), timeout=3):
+                pass
             result["connected"] = True
 
             try:
@@ -278,6 +244,10 @@ class Network:
 
         return result
 
+    def to_dict(self) -> dict:
+        """Compatibility entry point used by the web report endpoints."""
+        return self.get_network_summary()
+
     def export_metrics(self, export_format: str = "json", output_dir: str = "metrics"):
         """Export network metrics in specified format."""
         os.makedirs(output_dir, exist_ok=True)
@@ -285,9 +255,7 @@ class Network:
 
         try:
             if export_format == "json":
-                file_path = os.path.join(
-                    output_dir, f"network_metrics_{timestamp}.json"
-                )
+                file_path = os.path.join(output_dir, f"network_metrics_{timestamp}.json")
                 with open(file_path, "w") as f:
                     json.dump(self.get_network_summary(), f, indent=4)
             return file_path

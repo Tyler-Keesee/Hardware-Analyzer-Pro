@@ -1,105 +1,123 @@
 # Hardware Analyzer Pro
 
-A Python and PyQt6 desktop hardware-monitoring project with system metrics, performance graphs, and export utilities. Features and platform support should be verified against your hardware and the included tests.
+A Python/PyQt6 desktop application for CPU, RAM, GPU, storage, and network monitoring, live graphs, themes, and JSON/CSV/PDF reports.
 
-## Key Features
+## Windows installation
 
-- Real-time hardware monitoring
-  - CPU usage and temperature
-  - RAM utilization
-  - GPU metrics (NVIDIA support)
-  - Storage analysis
-  - Network monitoring
-- Professional UI with Dark/Light themes
-- Live performance graphs
-- Network interface monitoring
-- Export capabilities (JSON, CSV, PDF)
-- Auto-refresh functionality
-- System alerts and notifications
+Install Python 3.10 or newer with pip first. Python 3.14 is supported by the verification workflow. Run each command separately in either Command Prompt or PowerShell:
 
-## Testing and support status
-
-The repository contains tests under `tests/`, but desktop rendering, sensors, and
-NVIDIA-specific metrics depend on the operating system, permissions, and installed drivers.
-Do not assume all monitors or export formats work on every machine without testing.
-There is currently no confirmed multi-platform CI matrix.
-
-## Installation
-
-1. Clone the repository:
-```bash
+```text
 git clone https://github.com/Tyler-Keesee/Hardware-Analyzer-Pro.git
+```
+
+```text
 cd Hardware-Analyzer-Pro
 ```
 
-2. Run the setup script:
-```bash
-# Windows (PowerShell)
-powershell.exe -ExecutionPolicy Bypass -File .\dev_setup.ps1
+Install runtime dependencies into the project's `venv`:
 
-# Windows (Command Prompt)
+```text
+.\setup.bat
+```
+
+Start the application:
+
+```text
 .\launch.bat
+```
 
-# Linux/macOS (experimental; not CI-verified)
+The launcher always uses `venv\Scripts\python.exe`; activating a virtual environment is unnecessary. Setup reuses an existing environment, checks command failures, and does not reformat source files or install PowerShell modules.
+
+If you already ran the old setup and `python run.py` says `No module named 'PyQt6'`, use the installed environment directly:
+
+```text
+.\venv\Scripts\python.exe .\run.py
+```
+
+Installing packages inside a child PowerShell process does not activate its environment in the parent Command Prompt. Running `python run.py` there can select a different Python installation.
+
+PowerShell-only equivalents are available:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+## Linux/macOS
+
+Windows is the primary target. These commands install the same runtime dependencies; available sensors and drivers vary by platform.
+
+```sh
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python run.py
 ```
 
-## Requirements
-
-- Python 3.8 or higher
-- Windows is the primary target; Linux/macOS behavior depends on available drivers and desktop support and has not been independently validated
-- Dependencies (automatically installed):
-  - PyQt6 ≥ 6.4.0
-  - matplotlib ≥ 3.6.0
-  - psutil ≥ 5.9.0
-  - py3nvml ≥ 0.2.7 (for NVIDIA GPU support)
-  - Additional requirements listed in requirements.txt
-
-## Usage
-
-1. Start the application:
-```bash
-python run.py
+```sh
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
-2. Features:
-   - Use the toolbar for quick actions
-   - Switch between tabs for different monitoring views
-   - Adjust refresh rates in settings
-   - Export data in various formats
+```sh
+.venv/bin/python run.py
+```
+
+Minimal Debian/Ubuntu environments also need Qt system libraries such as `libegl1`, `libgl1`, `libxkbcommon0`, and `libdbus-1-3`. These cannot be installed with pip; the Linux CI job installs them before desktop tests.
+
+## Verification and limitations
+
+The GitHub Actions workflow covers Windows and Linux with Python 3.10 and 3.14. It runs lint, type checks, hardware-manager tests, report-export tests, and a desktop smoke test that opens the real four-tab window, refreshes hardware information, renders each tab, and closes it. Windows jobs additionally exercise setup and launcher behavior, including failure exit codes and paths containing spaces. Check the workflow results for the commit you use; a configured matrix alone is not proof of a passing run.
+
+To run all development checks on Windows:
+
+```text
+.\dev_setup.bat -Verify
+```
+
+To run only the desktop smoke test:
+
+```text
+.\launch.bat --smoke-test
+```
+
+On a machine without a display, set `QT_QPA_PLATFORM=offscreen` in the test process. This checks application construction and rendering without proving physical sensor accuracy.
+
+CPU temperature is currently available only where Linux `coretemp` sensors expose it; Windows displays `Not available`. NVIDIA readings require a working NVIDIA driver/NVML installation. The current GPU percentage is video-memory utilization, not GPU-engine utilization. OS restrictions may make network details unavailable; the report includes those errors while other views remain usable. macOS has no CI job. No hardware-specific NVIDIA or Windows temperature validation is claimed.
 
 ## Development
 
-```bash
-# Install development dependencies
-pip install pytest black flake8 mypy
+Developer setup installs tools without changing source formatting:
 
-# Run tests
-python -m pytest tests/
-
-# Code quality checks
-python -m black src/
-python -m flake8 src/
-python -m mypy src/
+```text
+.\dev_setup.bat
 ```
 
-## Logs
+Run checks individually using the project's interpreter:
 
-Log files are stored in the `logs` directory:
-- hardware_analyzer.log - Main application log
-- cpu_manager.log - CPU monitoring
-- gpu_manager.log - GPU monitoring
-- ram_manager.log - Memory monitoring
-- network_manager.log - Network monitoring
-- storage_manager.log - Storage monitoring
+```text
+.\venv\Scripts\python.exe -m pytest tests
+```
+
+```text
+.\venv\Scripts\python.exe -m flake8 src tests run.py setup.py
+```
+
+```text
+.\venv\Scripts\python.exe -m mypy src --config-file mypy.ini
+```
+
+Linux/macOS developers can install `requirements-dev.txt` with `.venv/bin/python -m pip install -r requirements-dev.txt` and use that interpreter for the same checks. Formatting is an explicit developer action, not part of installation.
+
+An optional Flask interface is separate from the desktop launcher. Install its dependencies with `python -m pip install -e ".[web]"` in your chosen environment and run `python -m src.web_app`. Its endpoints are not covered by the desktop smoke test.
+
+## Usage and logs
+
+Use the Hardware, Network, Monitoring, and Settings tabs. The toolbar provides refresh, theme selection, and JSON/CSV/PDF exports. Logs are written under `logs/` in the project directory. The app does not need administrator privileges to launch; individual metrics can be restricted by the OS.
 
 ## License
 
-The `LICENSE` file is currently empty and does not provide a usable license grant. Add a complete license text before describing the project as MIT-licensed.
+The `LICENSE` file is empty. This repository does not currently include a usable license grant and should not be described as MIT-licensed.
 
 ## Support
 
-For issues and feature requests, please create an issue in the repository.
+Report issues with the full terminal error, operating system, Python version, and relevant files from `logs/`.
