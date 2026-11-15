@@ -28,7 +28,7 @@ class ThemeManager:
             background-color: {c['background']};
             color: {c['text']};
         }}
-        
+
         QPushButton {{
             background-color: {c['primary']};
             color: white;
@@ -37,11 +37,11 @@ class ThemeManager:
             border-radius: 4px;
             font-weight: bold;
         }}
-        
+
         QPushButton:hover {{
             background-color: #1884d9;
         }}
-        
+
         /* ...rest of dark theme... */
         """
 
@@ -53,7 +53,7 @@ class ThemeManager:
             background-color: {c['background']};
             color: {c['text']};
         }}
-        
+
         QPushButton {{
             background-color: {c['primary']};
             color: white;
@@ -62,11 +62,11 @@ class ThemeManager:
             border-radius: 4px;
             font-weight: bold;
         }}
-        
+
         QPushButton:hover {{
             background-color: #1884d9;
         }}
-        
+
         /* ...rest of light theme... */
         """
 

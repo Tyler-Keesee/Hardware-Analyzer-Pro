@@ -1,25 +1,52 @@
 name: Hardware Analyzer Python checks
 on:
   pull_request:
-    paths: ['src/**', 'tests/**', 'requirements.txt', '.github/workflows/python-checks.yml']
   push:
     branches: [main]
-    paths: ['src/**', 'tests/**', 'requirements.txt', '.github/workflows/python-checks.yml']
 permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.14']
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Install runtime dependencies and pytest
-        run: python -m pip install -r requirements.txt pytest
-      - name: Syntax check
-        run: python -m compileall -q src tests run.py
-      - name: Hardware manager tests (CPU-only Linux runner)
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q tests
+          python-version: ${{ matrix.python }}
+      - name: Windows documented setup
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: .\setup.bat -Development
+      - name: Linux setup
+        if: runner.os != 'Windows'
+        run: |
+          python -m venv venv
+          venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint, type checks, tests, desktop rendering, and installed entry point
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            analyzer_python="venv/Scripts/python.exe"
+            analyzer_command="venv/Scripts/hardware-analyzer.exe"
+          else
+            analyzer_python="venv/bin/python"
+            analyzer_command="venv/bin/hardware-analyzer"
+          fi
+          "$analyzer_python" -m compileall -q src tests run.py setup.py
+          "$analyzer_python" -m flake8 src tests run.py setup.py
+          "$analyzer_python" -m mypy src --config-file mypy.ini
+          "$analyzer_python" -m pytest tests
+          "$analyzer_python" run.py --smoke-test
+          "$analyzer_python" -m pip install -e .
+          "$analyzer_command" --smoke-test

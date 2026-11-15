@@ -2,7 +2,8 @@ import sys
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Deque
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -20,26 +21,25 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QGroupBox,
     QScrollArea,
+    QStatusBar,
 )
-from PyQt6.QtCore import Qt, QTimer, QSize, QObject
-from PyQt6.QtGui import QTextCursor, QIcon, QFont
-from core.hardware_manager import HardwareManager
-from core.network import Network
-from core.utils import setup_logging
-from themes import ThemeManager
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon, QFont
+from .core.hardware_manager import HardwareManager
+from .core.network import Network
+from .core.utils import setup_logging
+from .themes import ThemeManager
 
 # Add at the top of the file, before other imports
 try:
     import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
     import matplotlib.dates as mdates
-    from datetime import datetime, timedelta
 
     matplotlib_available = True
 except ImportError:
     matplotlib_available = False
 
-import numpy as np
 from collections import deque
 from threading import Lock
 import csv
@@ -51,6 +51,12 @@ class HardwareAnalyzerApp(QMainWindow):
 
         # Initialize time first
         self.last_refresh = datetime.now()
+        self.data_lock = Lock()
+        self.max_points = 60
+        self.time_data: Deque[datetime] = deque(maxlen=self.max_points)
+        self.cpu_data: Deque[float] = deque(maxlen=self.max_points)
+        self.ram_data: Deque[float] = deque(maxlen=self.max_points)
+        self.gpu_data: Deque[float] = deque(maxlen=self.max_points)
 
         # Setup logging first
         setup_logging()
@@ -84,16 +90,12 @@ class HardwareAnalyzerApp(QMainWindow):
 
             # Load settings last
             self.load_settings()
+            self.refresh_hardware()
 
         except Exception as e:
             self.logger.critical(f"Failed to initialize: {e}")
             QMessageBox.critical(self, "Error", f"Failed to initialize: {e}")
             raise
-
-        # Add monitoring locks and buffers
-        self.data_lock = Lock()
-        self.max_points = 60  # 60 seconds of data
-        self.initialize_data_buffers()
 
     def print_log_locations(self):
         """Print locations of all log files."""
@@ -135,20 +137,18 @@ class HardwareAnalyzerApp(QMainWindow):
                     continue
 
             # If no theme file found, use default theme
-            self.setStyleSheet(ThemeManager.get_dark_theme())
+            self.setStyleSheet(self.theme_manager.get_dark_theme())
             self.logger.info("Using default dark theme")
 
         except Exception as e:
             self.logger.error(f"Theme loading failed, using basic theme: {e}")
             # Set minimal fallback theme
-            self.setStyleSheet(
-                """
+            self.setStyleSheet("""
                 QMainWindow, QWidget {
                     background-color: #1E1E1E;
                     color: #FFFFFF;
                 }
-            """
-            )
+            """)
 
     def init_ui(self):
         """Initialize the main user interface."""
@@ -158,7 +158,8 @@ class HardwareAnalyzerApp(QMainWindow):
         main_layout = QVBoxLayout(main_widget)
 
         # Create status bar first
-        self.status_bar = self.statusBar()
+        self.status_bar = QStatusBar(self)
+        self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Ready")
 
         # Add toolbar
@@ -183,24 +184,21 @@ class HardwareAnalyzerApp(QMainWindow):
         self.hardware_text = QTextEdit()
         self.hardware_text.setReadOnly(True)
         self.hardware_text.setFont(QFont("Consolas", 11))
-        self.hardware_text.setStyleSheet(
-            """
+        self.hardware_text.setStyleSheet("""
             QTextEdit {
                 background-color: #1E1E1E;
                 color: #FFFFFF;
                 border: 1px solid #333333;
                 padding: 10px;
             }
-        """
-        )
+        """)
         layout.addWidget(self.hardware_text)
 
         # Control buttons with modern styling
         button_layout = QHBoxLayout()
 
         refresh_btn = QPushButton("🔄 Refresh")
-        refresh_btn.setStyleSheet(
-            """
+        refresh_btn.setStyleSheet("""
             QPushButton {
                 background-color: #0066cc;
                 color: white;
@@ -211,14 +209,12 @@ class HardwareAnalyzerApp(QMainWindow):
             QPushButton:hover {
                 background-color: #0052a3;
             }
-        """
-        )
+        """)
         refresh_btn.clicked.connect(self.refresh_hardware)
         button_layout.addWidget(refresh_btn)
 
         export_btn = QPushButton("💾 Export")
-        export_btn.setStyleSheet(
-            """
+        export_btn.setStyleSheet("""
             QPushButton {
                 background-color: #28a745;
                 color: white;
@@ -229,8 +225,7 @@ class HardwareAnalyzerApp(QMainWindow):
             QPushButton:hover {
                 background-color: #218838;
             }
-            """
-        )
+            """)
         export_btn.clicked.connect(self.export_hardware)
         button_layout.addWidget(export_btn)
 
@@ -244,8 +239,7 @@ class HardwareAnalyzerApp(QMainWindow):
 
         # Add refresh button at the top
         refresh_btn = QPushButton("🔄 Refresh Network")
-        refresh_btn.setStyleSheet(
-            """
+        refresh_btn.setStyleSheet("""
             QPushButton {
                 background-color: #0066cc;
                 color: white;
@@ -257,15 +251,13 @@ class HardwareAnalyzerApp(QMainWindow):
             QPushButton:hover {
                 background-color: #0052a3;
             }
-        """
-        )
+        """)
         refresh_btn.clicked.connect(self.refresh_network)
         layout.addWidget(refresh_btn)
 
         # Network Status Card
         status_group = QGroupBox("Network Status")
-        status_group.setStyleSheet(
-            """
+        status_group.setStyleSheet("""
             QGroupBox {
                 border: 2px solid #2196F3;
                 border-radius: 8px;
@@ -277,20 +269,17 @@ class HardwareAnalyzerApp(QMainWindow):
                 left: 10px;
                 padding: 0 5px;
             }
-        """
-        )
+        """)
         status_layout = QVBoxLayout()
 
         self.connection_status = QLabel()
-        self.connection_status.setStyleSheet(
-            """
+        self.connection_status.setStyleSheet("""
             QLabel {
                 font-size: 14px;
                 padding: 10px;
                 border-radius: 5px;
             }
-        """
-        )
+        """)
         status_layout.addWidget(self.connection_status)
 
         self.external_ip = QLabel()
@@ -302,8 +291,7 @@ class HardwareAnalyzerApp(QMainWindow):
 
         # Network Interfaces Card
         interfaces_group = QGroupBox("Network Interfaces")
-        interfaces_group.setStyleSheet(
-            """
+        interfaces_group.setStyleSheet("""
             QGroupBox {
                 border: 2px solid #4CAF50;
                 border-radius: 8px;
@@ -315,8 +303,7 @@ class HardwareAnalyzerApp(QMainWindow):
                 left: 10px;
                 padding: 0 5px;
             }
-        """
-        )
+        """)
         interfaces_layout = QVBoxLayout()
 
         self.interfaces_area = QScrollArea()
@@ -331,8 +318,7 @@ class HardwareAnalyzerApp(QMainWindow):
 
         # Network Statistics Card
         stats_group = QGroupBox("Network Statistics")
-        stats_group.setStyleSheet(
-            """
+        stats_group.setStyleSheet("""
             QGroupBox {
                 border: 2px solid #9C27B0;
                 border-radius: 8px;
@@ -344,13 +330,11 @@ class HardwareAnalyzerApp(QMainWindow):
                 left: 10px;
                 padding: 0 5px;
             }
-        """
-        )
+        """)
         stats_layout = QVBoxLayout()
 
         self.network_stats = QLabel()
-        self.network_stats.setStyleSheet(
-            """
+        self.network_stats.setStyleSheet("""
             QLabel {
                 font-family: 'Consolas';
                 font-size: 12px;
@@ -358,8 +342,7 @@ class HardwareAnalyzerApp(QMainWindow):
                 background-color: #f8f9fa;
                 border-radius: 5px;
             }
-        """
-        )
+        """)
         stats_layout.addWidget(self.network_stats)
 
         stats_group.setLayout(stats_layout)
@@ -369,8 +352,7 @@ class HardwareAnalyzerApp(QMainWindow):
         self.network_text = QTextEdit()
         self.network_text.setReadOnly(True)
         self.network_text.setFont(QFont("Consolas", 10))
-        self.network_text.setStyleSheet(
-            """
+        self.network_text.setStyleSheet("""
             QTextEdit {
                 background-color: #252526;
                 color: #ffffff;
@@ -378,8 +360,7 @@ class HardwareAnalyzerApp(QMainWindow):
                 border-radius: 4px;
                 padding: 10px;
             }
-        """
-        )
+        """)
 
         # Add to layout
         layout.addWidget(self.network_text)
@@ -397,8 +378,7 @@ class HardwareAnalyzerApp(QMainWindow):
             # Update connection status
             if network_info.get("connectivity", {}).get("connected"):
                 self.connection_status.setText("🟢 Connected")
-                self.connection_status.setStyleSheet(
-                    """
+                self.connection_status.setStyleSheet("""
                     QLabel {
                         background-color: #E8F5E9;
                         color: #2E7D32;
@@ -406,12 +386,10 @@ class HardwareAnalyzerApp(QMainWindow):
                         padding: 10px;
                         border-radius: 5px;
                     }
-                """
-                )
+                """)
             else:
                 self.connection_status.setText("🔴 No Internet Connection")
-                self.connection_status.setStyleSheet(
-                    """
+                self.connection_status.setStyleSheet("""
                     QLabel {
                         background-color: #FFEBEE;
                         color: #C62828;
@@ -419,13 +397,10 @@ class HardwareAnalyzerApp(QMainWindow):
                         padding: 10px;
                         border-radius: 5px;
                     }
-                """
-                )
+                """)
 
             # Update external IP
-            external_ip = network_info.get("connectivity", {}).get(
-                "external_ip", "Unknown"
-            )
+            external_ip = network_info.get("connectivity", {}).get("external_ip", "Unknown")
             self.external_ip.setText(f"External IP: {external_ip}")
 
             # Update interfaces
@@ -457,15 +432,13 @@ class HardwareAnalyzerApp(QMainWindow):
         # Status with icon
         status = "🟢 Up" if iface["status"] == "Up" else "🔴 Down"
         status_label = QLabel(f"Status: {status}")
-        status_label.setStyleSheet(
-            """
+        status_label.setStyleSheet("""
             QLabel {
                 padding: 5px;
                 border-radius: 3px;
                 background-color: #2d2d2d;
             }
-        """
-        )
+        """)
         layout.addWidget(status_label)
 
         # Speed and MTU
@@ -509,8 +482,7 @@ class HardwareAnalyzerApp(QMainWindow):
         # CPU Usage
         layout.addWidget(QLabel("CPU Usage:"))
         self.cpu_progress = QProgressBar()
-        self.cpu_progress.setStyleSheet(
-            """
+        self.cpu_progress.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #ccc;
                 border-radius: 5px;
@@ -520,15 +492,13 @@ class HardwareAnalyzerApp(QMainWindow):
                 background-color: #0066cc;
                 border-radius: 5px;
             }
-        """
-        )
+        """)
         layout.addWidget(self.cpu_progress)
 
         # RAM Usage
         layout.addWidget(QLabel("RAM Usage:"))
         self.ram_progress = QProgressBar()
-        self.ram_progress.setStyleSheet(
-            """
+        self.ram_progress.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #ccc;
                 border-radius: 5px;
@@ -538,15 +508,13 @@ class HardwareAnalyzerApp(QMainWindow):
                 background-color: #28a745;
                 border-radius: 5px;
             }
-        """
-        )
+        """)
         layout.addWidget(self.ram_progress)
 
         # GPU Usage
         layout.addWidget(QLabel("GPU Usage:"))
         self.gpu_progress = QProgressBar()
-        self.gpu_progress.setStyleSheet(
-            """
+        self.gpu_progress.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #ccc;
                 border-radius: 5px;
@@ -556,8 +524,7 @@ class HardwareAnalyzerApp(QMainWindow):
                 background-color: #dc3545;
                 border-radius: 5px;
             }
-        """
-        )
+        """)
         layout.addWidget(self.gpu_progress)
 
         # Add graphs if matplotlib is available
@@ -590,9 +557,7 @@ class HardwareAnalyzerApp(QMainWindow):
                 ax.grid(True, linestyle="--", alpha=0.3)
                 ax.tick_params(colors="white")
                 ax.set_ylim(0, 100)
-                ax.yaxis.set_major_formatter(
-                    plt.FuncFormatter(lambda x, p: f"{int(x)}%")
-                )
+                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x)}%"))
 
             # Create lines
             (self.cpu_line,) = ax1.plot([], [], "c-", linewidth=2, label="CPU")
@@ -622,7 +587,7 @@ class HardwareAnalyzerApp(QMainWindow):
             layout.addWidget(self.canvas)
 
             # Start update timer
-            self.graph_timer = QTimer()
+            self.graph_timer = QTimer(self)
             self.graph_timer.timeout.connect(self.update_graphs)
             self.graph_timer.start(1000)  # Update every second
 
@@ -683,8 +648,7 @@ class HardwareAnalyzerApp(QMainWindow):
         layout.addWidget(QLabel("Theme:"))
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Light", "Dark", "System"])
-        self.theme_combo.setStyleSheet(
-            """
+        self.theme_combo.setStyleSheet("""
             QComboBox {
                 background-color: #252526;
                 color: #FFFFFF;
@@ -717,8 +681,7 @@ class HardwareAnalyzerApp(QMainWindow):
                 border: 1px solid #3a3a3a;
                 selection-background-color: #0078d4;
             }
-        """
-        )
+        """)
         self.theme_combo.currentTextChanged.connect(self.change_theme)
         layout.addWidget(self.theme_combo)
 
@@ -726,26 +689,22 @@ class HardwareAnalyzerApp(QMainWindow):
         layout.addWidget(QLabel("Auto-refresh Interval:"))
         self.refresh_combo = QComboBox()
         self.refresh_combo.addItems(["5s", "10s", "30s", "1m"])
-        self.refresh_combo.setStyleSheet(
-            """
+        self.refresh_combo.setStyleSheet("""
             QComboBox {
                 padding: 5px;
                 border: 1px solid #ccc;
                 border-radius: 4px;
             }
-        """
-        )
+        """)
         layout.addWidget(self.refresh_combo)
 
         # Auto-start option
         self.autostart_check = QCheckBox("Start with System")
-        self.autostart_check.setStyleSheet(
-            """
+        self.autostart_check.setStyleSheet("""
             QCheckBox {
                 spacing: 5px;
             }
-        """
-        )
+        """)
         layout.addWidget(self.autostart_check)
 
         layout.addStretch()
@@ -757,8 +716,7 @@ class HardwareAnalyzerApp(QMainWindow):
 
         # Refresh All button with modern styling
         refresh_btn = QPushButton("🔄 Refresh All")
-        refresh_btn.setStyleSheet(
-            """
+        refresh_btn.setStyleSheet("""
             QPushButton {
                 background-color: #0066cc;
                 color: white;
@@ -769,31 +727,27 @@ class HardwareAnalyzerApp(QMainWindow):
             QPushButton:hover {
                 background-color: #0052a3;
             }
-        """
-        )
+        """)
         refresh_btn.clicked.connect(self.refresh_all)
         toolbar.addWidget(refresh_btn)
 
         # Export options with styled dropdown
         export_combo = QComboBox()
         export_combo.addItems(["Export JSON", "Export CSV", "Export PDF"])
-        export_combo.setStyleSheet(
-            """
+        export_combo.setStyleSheet("""
             QComboBox {
                 padding: 8px;
                 border: 1px solid #ccc;
                 border-radius: 4px;
                 min-width: 150px;
             }
-        """
-        )
+        """)
         export_combo.currentTextChanged.connect(self.handle_export)
         toolbar.addWidget(export_combo)
 
         # Auto refresh toggle with modern switch style
         self.auto_refresh_cb = QCheckBox("Auto Refresh")
-        self.auto_refresh_cb.setStyleSheet(
-            """
+        self.auto_refresh_cb.setStyleSheet("""
             QCheckBox {
                 spacing: 8px;
             }
@@ -801,8 +755,7 @@ class HardwareAnalyzerApp(QMainWindow):
                 width: 18px;
                 height: 18px;
             }
-        """
-        )
+        """)
         self.auto_refresh_cb.stateChanged.connect(self.toggle_auto_refresh)
         toolbar.addWidget(self.auto_refresh_cb)
 
@@ -838,9 +791,7 @@ class HardwareAnalyzerApp(QMainWindow):
                     interval *= 1000  # seconds to milliseconds
 
                 self.refresh_timer.start(interval)
-                self.status_bar.showMessage(
-                    f"Auto-refresh enabled: Every {interval_text}"
-                )
+                self.status_bar.showMessage(f"Auto-refresh enabled: Every {interval_text}")
                 self.logger.info(f"Auto-refresh enabled with interval: {interval_text}")
             else:
                 self.refresh_timer.stop()
@@ -882,11 +833,12 @@ class HardwareAnalyzerApp(QMainWindow):
 
                 # Update status bar
                 self.status_bar.showMessage(
-                    f"✓ All Updated | CPU: {cpu_usage:.1f}% | RAM: {ram_usage:.1f}% | GPU: {gpu_usage:.1f}% | {datetime.now().strftime('%H:%M:%S')}"
+                    f"✓ All Updated | CPU: {cpu_usage:.1f}% | RAM: {ram_usage:.1f}% | "
+                    f"GPU: {gpu_usage:.1f}% | {datetime.now().strftime('%H:%M:%S')}"
                 )
 
                 # Update graphs if available
-                if hasattr(self, 'graph_timer'):
+                if hasattr(self, "graph_timer"):
                     self.update_graphs()
 
             finally:
@@ -905,16 +857,15 @@ class HardwareAnalyzerApp(QMainWindow):
         try:
             # Use the new pre-formatted summary method
             formatted_output = self.hardware_manager.get_formatted_summary()
-            self.hardware_text.setFont(
-                QFont("Cascadia Code", 10)
-            )  # Better monospace font
+            self.hardware_text.setFont(QFont("Cascadia Code", 10))  # Better monospace font
             self.hardware_text.setText(formatted_output)
 
             # Update status bar with CPU and RAM usage
             cpu_usage = self.hardware_manager.get_cpu_usage()
             ram_usage = self.hardware_manager.get_ram_usage()
             self.status_bar.showMessage(
-                f"✓ Updated | CPU: {cpu_usage:.1f}% | RAM: {ram_usage:.1f}% | {datetime.now().strftime('%H:%M:%S')}"
+                f"✓ Updated | CPU: {cpu_usage:.1f}% | RAM: {ram_usage:.1f}% | "
+                f"{datetime.now().strftime('%H:%M:%S')}"
             )
 
         except Exception as e:
@@ -931,11 +882,10 @@ class HardwareAnalyzerApp(QMainWindow):
             sections.append("╔════════════════ CPU INFORMATION ════════════════╗")
             sections.append(f"║  Model      : {cpu_info.get('name', 'Unknown'):<35} ║")
             sections.append(
-                f"║  Cores      : {cpu_info.get('cores', 0)} Physical, {cpu_info.get('threads', 0)} Logical ║"
+                f"║  Cores      : {cpu_info.get('cores', 0)} Physical, "
+                f"{cpu_info.get('threads', 0)} Logical ║"
             )
-            sections.append(
-                f"║  Frequency  : {cpu_info.get('frequency', 'Unknown'):<35} ║"
-            )
+            sections.append(f"║  Frequency  : {cpu_info.get('frequency', 'Unknown'):<35} ║")
             usage = float(
                 cpu_info.get("current_usage", "0").strip("%")
                 if isinstance(cpu_info.get("current_usage"), str)
@@ -1030,18 +980,14 @@ class HardwareAnalyzerApp(QMainWindow):
 
         except Exception as e:
             self.logger.error(f"Network refresh error: {e}")
-            self.show_error(
-                "Network Refresh Error", f"Failed to refresh network information: {e}"
-            )
+            self.show_error("Network Refresh Error", f"Failed to refresh network information: {e}")
 
     def update_network_status(self, network_info):
         """Update network status indicators."""
         try:
             # Update connection status
             is_connected = network_info.get("connectivity", {}).get("connected", False)
-            self.connection_status.setText(
-                "🟢 Connected" if is_connected else "🔴 Disconnected"
-            )
+            self.connection_status.setText("🟢 Connected" if is_connected else "🔴 Disconnected")
             self.connection_status.setStyleSheet(
                 """
                 QLabel {
@@ -1082,8 +1028,7 @@ class HardwareAnalyzerApp(QMainWindow):
                 f"❌ Errors Out: {io_stats.get('errout', 0)}"
             )
             self.network_stats.setText(stats_text)
-            self.network_stats.setStyleSheet(
-                """
+            self.network_stats.setStyleSheet("""
                 QLabel {
                     font-family: 'Consolas';
                     font-size: 12px;
@@ -1092,16 +1037,12 @@ class HardwareAnalyzerApp(QMainWindow):
                     color: #ffffff;
                     border-radius: 5px;
                 }
-            """
-            )
+            """)
 
             # Update IP information
-            external_ip = network_info.get("connectivity", {}).get(
-                "external_ip", "Unknown"
-            )
+            external_ip = network_info.get("connectivity", {}).get("external_ip", "Unknown")
             self.external_ip.setText(f"🌐 External IP: {external_ip}")
-            self.external_ip.setStyleSheet(
-                """
+            self.external_ip.setStyleSheet("""
                 QLabel {
                     font-size: 13px;
                     padding: 10px;
@@ -1109,8 +1050,7 @@ class HardwareAnalyzerApp(QMainWindow):
                     color: #ffffff;
                     border-radius: 5px;
                 }
-            """
-            )
+            """)
 
         except Exception as e:
             self.logger.error(f"Error updating network status: {e}")
@@ -1131,9 +1071,7 @@ class HardwareAnalyzerApp(QMainWindow):
     def update_status_bar(self, refresh_status=None):
         """Update the status bar with the latest information."""
         try:
-            status_text = (
-                f"Last Refresh: {self.last_refresh.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
+            status_text = f"Last Refresh: {self.last_refresh.strftime('%Y-%m-%d %H:%M:%S')}"
             if refresh_status:
                 components = []
                 for component, status in refresh_status.items():
@@ -1326,22 +1264,35 @@ class HardwareAnalyzerApp(QMainWindow):
 
     def export_csv(self):
         """Export data in CSV format."""
-        # CSV export implementation will go here
-        pass
+        self.handle_export("Export CSV")
 
     def export_pdf(self):
         """Export data in PDF format."""
-        # PDF export implementation will go here
-        pass
+        self.handle_export("Export PDF")
+
+    def _save_export_csv(self, default_name):
+        file_name, _ = QFileDialog.getSaveFileName(
+            self, "Save Report", default_name, "CSV Files (*.csv)"
+        )
+        if file_name:
+            self.hardware_manager._export_csv_report(file_name)
+            self.show_success(f"Report exported to {file_name}")
+
+    def _save_export_pdf(self, default_name):
+        file_name, _ = QFileDialog.getSaveFileName(
+            self, "Save Report", default_name, "PDF Files (*.pdf)"
+        )
+        if file_name:
+            self.hardware_manager._export_pdf_report(file_name)
+            self.show_success(f"Report exported to {file_name}")
 
     def show_success(self, message):
         """Show success message with styling."""
         msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Information)
+        msg.setIcon(QMessageBox.Icon.Information)
         msg.setText(message)
         msg.setWindowTitle("Success")
-        msg.setStyleSheet(
-            """
+        msg.setStyleSheet("""
             QMessageBox {
                 background-color: #252526;
             }
@@ -1355,9 +1306,8 @@ class HardwareAnalyzerApp(QMainWindow):
                 padding: 6px 14px;
                 border-radius: 4px;
             }
-        """
-        )
-        msg.exec_()
+        """)
+        msg.exec()
 
     def show_error(self, title, message):
         """Show error message dialog."""
@@ -1366,8 +1316,10 @@ class HardwareAnalyzerApp(QMainWindow):
     def closeEvent(self, event):
         """Handle application close event with proper cleanup."""
         try:
-            if hasattr(self, "refresh_timer"):
-                self.refresh_timer.stop()
+            for timer_name in ("refresh_timer", "network_timer", "graph_timer"):
+                timer = getattr(self, timer_name, None)
+                if timer is not None:
+                    timer.stop()
 
             if hasattr(self, "hardware_manager"):
                 self.hardware_manager.cleanup()

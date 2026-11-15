@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, render_template, send_from_directory, request
-from core.hardware_manager import HardwareManager
-from core.network import Network
+from .core.hardware_manager import HardwareManager
+from .core.network import Network
+import json
 import os
 from flask_cors import CORS
 import logging
@@ -9,9 +10,7 @@ import logging
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 app = Flask(
     __name__,
-    static_folder=os.path.join(
-        BASE_DIR, "static"
-    ),  # Serve CSS/JS files from the static directory
+    static_folder=os.path.join(BASE_DIR, "static"),  # Serve CSS/JS files from the static directory
     template_folder=os.path.join(BASE_DIR, "templates"),  # Serve HTML templates
 )
 CORS(app)
@@ -130,7 +129,7 @@ def generate_report():
             jsonify(
                 {
                     "message": "Report generated successfully",
-                    "report_url": f"/results/combined_report.json",
+                    "report_url": "/results/combined_report.json",
                 }
             ),
             200,

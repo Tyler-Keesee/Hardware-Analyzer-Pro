@@ -2,6 +2,7 @@ import psutil
 import json
 import requests
 import logging
+from typing import Any, Dict
 
 # Configure logging
 logging.basicConfig(
@@ -15,6 +16,7 @@ logging.basicConfig(
 class Storage:
     def __init__(self):
         """Initialize the storage details."""
+        self.logger = logging.getLogger("Storage_Manager")
         try:
             self.drives = self._get_storage_info()
             logging.info("Storage details initialized successfully.")
@@ -39,9 +41,7 @@ class Storage:
                         "percent_used": f"{usage.percent:.1f}%",
                     }
                 )
-                logging.info(
-                    f"Retrieved storage details for device: {partition.device}"
-                )
+                logging.info(f"Retrieved storage details for device: {partition.device}")
             except PermissionError:
                 # Skip inaccessible partitions
                 logging.warning(f"Permission denied for device: {partition.device}")
@@ -134,7 +134,7 @@ class Storage:
             total_gb = float(drive_info["total"].split()[0])
             free_gb = float(drive_info["free"].split()[0])
 
-            status = {"status": "optimal", "warnings": [], "recommendations": []}
+            status: Dict[str, Any] = {"status": "optimal", "warnings": [], "recommendations": []}
 
             # Space warnings
             if used_percent > 90:
@@ -162,9 +162,7 @@ class Storage:
             # System drive specific checks
             if drive_info["device"].split(":")[0] == "C":
                 if free_gb < 50:
-                    status["warnings"].append(
-                        "System drive space critical for optimal performance"
-                    )
+                    status["warnings"].append("System drive space critical for optimal performance")
                     status["recommendations"].append(
                         "Maintain at least 50GB free on system drive for performance"
                     )

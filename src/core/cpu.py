@@ -2,13 +2,12 @@ import psutil
 import platform
 import subprocess
 import json
-import requests
 import logging
 import logging.handlers
 import os
 import csv
 from datetime import datetime
-from typing import Dict, Union, List
+from typing import Any, Dict, Union, List
 
 
 class CPU:
@@ -17,17 +16,17 @@ class CPU:
         try:
             # Initialize core attributes
             self.log_dir = log_dir
-            self.history = []
+            self.history: List[Dict[str, Any]] = []
             self.max_history_size = 100
 
             # Initialize default values
             self.name = "Unknown"
             self.cores = 0
             self.threads = 0
-            self.frequency = 0
+            self.frequency = 0.0
             self.architecture = "Unknown"
-            self.current_usage = 0
-            self.temperature = "Not available"
+            self.current_usage = 0.0
+            self.temperature: Union[float, str] = "Not available"
             self.hyperthreading = False  # Add missing attribute
             self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -95,7 +94,7 @@ class CPU:
 
                     w = wmi.WMI(timeout=3)  # Add timeout to prevent hanging
                     for proc in w.Win32_Processor():
-                        return proc.Name.strip()
+                        return str(proc.Name).strip()
                 except Exception:
                     # Fallback to platform info if WMI fails
                     return platform.processor()
@@ -137,7 +136,7 @@ class CPU:
                 if temp:
                     return temp[0].current
             return "Not available"
-        except:
+        except Exception:
             return "Not available"
 
     def _update_history(self):

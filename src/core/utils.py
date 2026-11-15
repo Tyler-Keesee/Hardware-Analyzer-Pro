@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import logging
 import csv
@@ -12,9 +11,7 @@ def setup_logging():
     os.makedirs("logs", exist_ok=True)
 
     # Configure logging with UTF-8 encoding
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     # File handler with UTF-8 encoding
     file_handler = logging.FileHandler("logs/hardware_analyzer.log", encoding="utf-8")
@@ -89,7 +86,7 @@ def generate_timestamped_filename(base_name, extension):
 def validate_writable_path(file_path):
     """Validate if the file path is writable."""
     try:
-        with open(file_path, "w") as file:
+        with open(file_path, "a"):
             pass
         logging.info(f"Path is writable: {file_path}")
     except Exception as e:

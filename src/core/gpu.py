@@ -1,13 +1,13 @@
 import platform
 import json
 import subprocess
-import requests
+import sys
 import logging
 import logging.handlers
 import os
 import csv
 from datetime import datetime
-from typing import Dict, Union, List
+from typing import Any, Dict, Union, List
 
 try:
     from py3nvml import py3nvml
@@ -22,7 +22,7 @@ class GPU:
         """Initialize GPU monitoring with enhanced features."""
         # Initialize core attributes
         self.log_dir = log_dir
-        self.history = []
+        self.history: List[Dict[str, Any]] = []
         self.max_history_size = 100
 
         # Create log directory
@@ -111,10 +111,10 @@ class GPU:
             # Method 2: Registry lookup
             memory_from_reg = self._get_gpu_memory_from_registry(gpu_obj.PNPDeviceID)
             if memory_from_reg != "Memory size unknown":
-                return memory_from_reg
+                return str(memory_from_reg)
 
             # Method 3: Dedicated video memory from DirectX
-            if platform.system() == "Windows":
+            if sys.platform == "win32":
                 try:
                     import ctypes
 
@@ -137,7 +137,7 @@ class GPU:
                         dxgi = ctypes.windll.dxgi
                         if dxgi and desc.DedicatedVideoMemory > 0:
                             return f"{desc.DedicatedVideoMemory / (1024**3):.2f} GB"
-                except:
+                except Exception:
                     pass
 
             # Method 4: GPU-specific detection
@@ -148,7 +148,7 @@ class GPU:
                     memory_info = py3nvml.nvmlDeviceGetMemoryInfo(handle)
                     py3nvml.nvmlShutdown()
                     return f"{memory_info.total / (1024**3):.2f} GB"
-                except:
+                except Exception:
                     pass
 
             # Last resort: Estimate based on device ID and known models
@@ -171,18 +171,17 @@ class GPU:
 
     def _get_gpu_memory_from_registry(self, pnp_device_id):
         """Get GPU memory from Windows registry as fallback."""
-        try:
-            import winreg
+        if sys.platform == "win32":
+            try:
+                import winreg
 
-            key_path = f"SYSTEM\\CurrentControlSet\\Control\\Class\\{pnp_device_id}"
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
-                memory_val = winreg.QueryValueEx(key, "HardwareInformation.MemorySize")[
-                    0
-                ]
-                if isinstance(memory_val, int) and memory_val > 0:
-                    return f"{memory_val / (1024**3):.2f} GB"
-        except:
-            pass
+                key_path = f"SYSTEM\\CurrentControlSet\\Control\\Class\\{pnp_device_id}"
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+                    memory_val = winreg.QueryValueEx(key, "HardwareInformation.MemorySize")[0]
+                    if isinstance(memory_val, int) and memory_val > 0:
+                        return f"{memory_val / (1024**3):.2f} GB"
+            except Exception:
+                pass
         return "Memory size unknown"
 
     def _get_linux_gpu_info(self) -> List[Dict[str, str]]:
@@ -205,14 +204,10 @@ class GPU:
         """Get GPU information on macOS using system_profiler."""
         gpus = []
         try:
-            output = subprocess.check_output(
-                ["system_profiler", "SPDisplaysDataType"]
-            ).decode()
+            output = subprocess.check_output(["system_profiler", "SPDisplaysDataType"]).decode()
             for line in output.splitlines():
                 if "Chipset Model:" in line:
-                    gpus.append(
-                        {"name": line.split(": ")[1].strip(), "memory_total": "Unknown"}
-                    )
+                    gpus.append({"name": line.split(": ")[1].strip(), "memory_total": "Unknown"})
         except Exception as e:
             self.logger.error(f"Error getting macOS GPU info: {e}")
         return gpus
@@ -245,7 +240,7 @@ class GPU:
 
     def get_performance_metrics(self) -> Dict[str, Union[str, List[Dict]]]:
         """Get current GPU performance metrics."""
-        metrics = {
+        metrics: Dict[str, Union[str, List[Dict]]] = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "gpus": self.gpus,
         }

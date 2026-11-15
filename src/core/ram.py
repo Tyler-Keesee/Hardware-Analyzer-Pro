@@ -1,12 +1,11 @@
 import psutil
 import json
-import requests
 import logging
 import logging.handlers
 import os
 import csv
 from datetime import datetime
-from typing import Dict, Union, List
+from typing import Any, Dict, List
 
 
 class RAM:
@@ -14,7 +13,7 @@ class RAM:
         """Initialize RAM monitoring with enhanced features."""
         # Initialize core attributes
         self.log_dir = log_dir
-        self.history = []
+        self.history: List[Dict[str, Any]] = []
         self.max_history_size = 100
 
         # Create log directory
@@ -87,7 +86,7 @@ class RAM:
             self.logger.error(f"Error updating history: {e}")
             raise
 
-    def get_detailed_metrics(self) -> Dict[str, Union[str, float]]:
+    def get_detailed_metrics(self) -> Dict[str, str]:
         """Get comprehensive RAM metrics."""
         return {
             "total": f"{self.total:.2f} GB",
