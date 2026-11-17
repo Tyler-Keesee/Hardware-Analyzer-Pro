@@ -1,81 +1,22 @@
-# Initialize strict mode and error handling
+# Safe, repeatable Windows developer setup. Never deletes an existing venv.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-
-function Write-Status {
-    param([string]$Message, [string]$Color = "White")
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $Message" -ForegroundColor $Color
-}
-
-# Create required directories
-$directories = @(
-    "src/logs",
-    "src/core/logs",
-    "src/static",
-    "src/templates",
-    "tests",
-    "reports",
-    "results",
-    "metrics"
-)
-
-foreach ($dir in $directories) {
-    if (-not (Test-Path $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        Write-Status "Created directory: $dir" -Color Green
-    } else {
-        Write-Status "Directory already exists: $dir" -Color Yellow
+Set-Location -LiteralPath $PSScriptRoot
+$python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path -LiteralPath $python)) {
+    if (Test-Path -LiteralPath (Join-Path $PSScriptRoot ".venv")) {
+        throw ".venv exists but has no Python executable. Rename it manually before retrying."
     }
+    Write-Host "Creating isolated .venv..."
+    python -m venv .venv
+    if ($LASTEXITCODE -ne 0) { throw "Python venv creation failed. Check python --version." }
 }
-
-# Setup Python virtual environment
-Write-Status "Setting up Python virtual environment..." -Color Cyan
-if (Test-Path "venv") {
-    Write-Status "Removing existing venv..." -Color Yellow
-    Remove-Item -Recurse -Force "venv"
-}
-
-Write-Status "Creating new virtual environment..." -Color Cyan
-python -m venv venv
-
-# Activate virtual environment
-Write-Status "Activating virtual environment..." -Color Cyan
-& .\venv\Scripts\Activate.ps1
-
-# Upgrade pip and install dependencies
-Write-Status "Installing dependencies..." -Color Cyan
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-
-# Install development tools
-Write-Status "Installing development tools..." -Color Cyan
-python -m pip install pytest black flake8 mypy
-
-# Run code quality checks
-Write-Status "Running code quality checks..." -Color Yellow
-python -m black src/
-python -m flake8 src/ --max-line-length=100 --ignore=E203,W503
-python -m mypy src/ --config-file mypy.ini
-
-# Run tests
-Write-Status "Running tests..." -Color Yellow
-python -m pytest tests/
-
-# Install required modules
-$modules = @(
-    "Pester",
-    "PSReadLine",
-    "Az"
-)
-
-foreach ($module in $modules) {
-    if (-not (Get-Module -ListAvailable -Name $module)) {
-        Install-Module -Name $module -Force -Scope CurrentUser
-        Write-Status "Installed module: $module" -Color Green
-    } else {
-        Write-Status "Module already installed: $module" -Color Yellow
-    }
-}
-
-Write-Status "Setup completed!" -Color Green
-Write-Status "To start the application, run: python run.py" -Color Cyan
+& $python -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed." }
+& $python -m pip install -r requirements.txt pytest
+if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed. Check Python version and pip output." }
+& $python -m compileall -q run.py src tests
+if ($LASTEXITCODE -ne 0) { throw "Source syntax checks failed." }
+& $python -m pytest -q tests
+if ($LASTEXITCODE -ne 0) { throw "Tests failed. Setup cannot be marked successful." }
+Write-Host "Setup and tests completed. Run: .\.venv\Scripts\python.exe run.py"

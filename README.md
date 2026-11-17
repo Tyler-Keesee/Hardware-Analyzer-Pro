@@ -24,7 +24,45 @@ NVIDIA-specific metrics depend on the operating system, permissions, and install
 Do not assume all monitors or export formats work on every machine without testing.
 There is currently no confirmed multi-platform CI matrix.
 
-## Installation
+## Windows 11: exact clean-clone setup (PowerShell)
+
+**Recommended:** Install Python 3.11 (the existing CI target) and Git. Python 3.14 may work with some dependencies, but the app has not been validated on every version. From a new PowerShell window, run these commands **one at a time**:
+
+```powershell
+git clone https://github.com/Tyler-Keesee/Hardware-Analyzer-Pro.git
+```
+```powershell
+Set-Location .\Hardware-Analyzer-Pro
+```
+```powershell
+python --version
+```
+```powershell
+python -m venv .venv
+```
+```powershell
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+```
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt pytest
+```
+```powershell
+.\.venv\Scripts\python.exe -m compileall -q run.py src tests
+```
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q tests
+```
+```powershell
+.\.venv\Scripts\python.exe run.py
+```
+
+Alternatively, after cloning, use `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\dev_setup.ps1` once, and then `.\launch.bat`. The setup script **reuses** an existing `.venv`, does **not** delete it, does **not** install Azure PowerShell modules, and reports failures instead of claiming success.
+
+**No virtual environment activation is needed:** explicitly calling `.\.venv\Scripts\python.exe` guarantees the correct interpreter.
+
+**Verification scope:** automated Linux/Python 3.11 tests run in GitHub Actions. Sensor readings, GUI rendering, driver support, and exact sensor access still require manual testing on your Windows machine. If a dependency refuses to install with Python 3.14, use Python 3.11 by installing `winget install Python.Python.3.11`, then create a new environment in a different folder rather than overwriting existing environments. On a clean clone you can replace the venv creation command with `py -3.11 -m venv .venv`.
+
+## Legacy setup notes
 
 1. Clone the repository:
 ```bash
