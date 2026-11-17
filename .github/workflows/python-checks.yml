@@ -1,10 +1,10 @@
 name: Hardware Analyzer Python checks
 on:
   pull_request:
-    paths: ['src/**', 'tests/**', 'requirements.txt', '.github/workflows/python-checks.yml']
+    paths: ['src/**', 'tests/**', 'requirements.txt', 'run.py', 'dev_setup.ps1', 'dev_setup.bat', 'setup.bat', 'launch.bat', 'README.md', '.github/workflows/python-checks.yml']
   push:
     branches: [main]
-    paths: ['src/**', 'tests/**', 'requirements.txt', '.github/workflows/python-checks.yml']
+    paths: ['src/**', 'tests/**', 'requirements.txt', 'run.py', 'dev_setup.ps1', 'dev_setup.bat', 'setup.bat', 'launch.bat', 'README.md', '.github/workflows/python-checks.yml']
 permissions:
   contents: read
 jobs:
